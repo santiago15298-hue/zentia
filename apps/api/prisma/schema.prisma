@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// MÓDULO 1: ACCESO Y USUARIOS
+// ==========================================
+enum Role {
+  ADMIN
+  SELLER
+}
+
+model User {
+  id                 String         @id @default(uuid()) @db.Uuid
+  email              String         @unique
+  name               String         @db.VarChar(120)
+  passwordHash       String
+  role               Role           @default(SELLER) // <-- Volvemos a SELLER
+  isActive           Boolean        @default(true)
+  mustChangePassword Boolean        @default(true)
+  passwordChangedAt  DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  
+  refreshTokens      RefreshToken[]
+  quotes             Quote[]
+
+  @@index([role, isActive])
+}
+
+model RefreshToken {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  user         User      @relation(fields: [userId], references: [id])
+  tokenHash    String    @unique
+  familyId     String    @db.Uuid
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?   @db.Uuid
+  rotatedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+// ==========================================
+// MÓDULO 2: CONFIGURACIÓN DE EMPRESA
+// ==========================================
+model CompanyConfig {
+  id        String   @id @default(uuid())
+  name      String
+  nit       String
+  address   String
+  phone     String
+  email     String
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// MÓDULO 3: CLIENTES Y CATÁLOGO
+// ==========================================
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  document  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  quotes    Quote[]
+  orders    Order[]
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  price       Float
+  stock       Int      @default(0)   // <--- AGREGA ESTA LÍNEA AQUÍ
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  quoteItems  QuoteItem[] // (O las relaciones que ya tengas abajo)
+}
+
+// ==========================================
+// MÓDULO 4: COTIZACIONES
+// ==========================================
+model Quote {
+  id         String      @id @default(uuid())
+  number     Int         @unique @default(autoincrement())
+  status     QuoteStatus @default(DRAFT)
+  total      Float       @default(0)
+  
+  customerId String
+  customer   Customer    @relation(fields: [customerId], references: [id])
+  
+  userId     String?     @db.Uuid
+  user       User?       @relation(fields: [userId], references: [id])
+  
+  items      QuoteItem[]
+  order      Order?
+  
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+}
+
+model QuoteItem {
+  id        String   @id @default(uuid())
+  quantity  Int      @default(1)
+  unitPrice Float
+  subtotal  Float
+  
+  quoteId   String
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+// ==========================================
+// MÓDULO 7: PEDIDOS
+// ==========================================
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber Int         @unique @default(autoincrement())
+  status      OrderStatus @default(PENDING)
+  total       Float
+  
+  quoteId     String?     @unique
+  quote       Quote?      @relation(fields: [quoteId], references: [id])
+  
+  customerId  String
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  shippingDocs ShippingDocument[]
+}
+
+enum OrderStatus {
+  PENDING
+  SHIPPED
+  DELIVERED
+}
+
+// ==========================================
+// MÓDULOS 5 Y 6: ENVÍOS Y SEGUIMIENTO
+// ==========================================
+model ShippingDocument {
+  id          String         @id @default(uuid())
+  trackingNum String         @unique
+  carrier     String
+  status      ShippingStatus @default(PREPARING)
+  
+  orderId     String
+  order       Order          @relation(fields: [orderId], references: [id])
+  
+  events      TrackingEvent[]
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model TrackingEvent {
+  id                 String           @id @default(uuid())
+  description        String
+  location           String?
+  timestamp          DateTime         @default(now())
+  
+  shippingDocumentId String
+  shippingDocument   ShippingDocument @relation(fields: [shippingDocumentId], references: [id], onDelete: Cascade)
+}
+
+enum ShippingStatus {
+  PREPARING
+  DISPATCHED
+  IN_TRANSIT
+  DELIVERED
+  RETURNED
+}
